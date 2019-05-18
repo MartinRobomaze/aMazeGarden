@@ -13,15 +13,17 @@ LoRaWanClass ttn;
 const int soilTempSensorPin = 13;
 const int soilMoisSensorPin = 14;
 
-const int ttnTxPin = 26;
-const int ttnRxPin = 27;
+const int ttnTxPin = 17;
+const int ttnRxPin = 16;
 
-char *DevEUI = "00B6CCF440F52B10";
+char *DevAddr = "2601120E";
+char *DevEUI = "00A377F70AE88716";
 char *AppEUI = "70B3D57ED001BF9F";
-char *AppKey = "B5982228595B10BAF453AF61A2B1FF23";
+char *NwkSKey = "EE43A22A89DF29F1B01D0AA314857769";
+char *AppSKey = "54EAB647769D39908A0030A13A10090D";
 
 char buffer[256];
-\
+
 float R1 = 10000;
 float c1 = 1.009249522e-03, c2 = 2.378405444e-04, c3 = 2.019202697e-07;
 
@@ -50,36 +52,35 @@ void setup() {
   
   // =====================================
 
-  // ==== LoRaWan OTAA activation ====
+  // ==== LoRaWan ABP setup ====
   
-  ttn.init(ttnTxPin, ttnRxPin);
+  lora.init(ttnTxPin, ttnRxPin);
 
-  ttn.getVersion(buffer, 256, 1);
+  memset(buffer, 0, 256);
+  lora.getVersion(buffer, 256, 1);
   Serial.print(buffer); 
   
-  ttn.getId(buffer, 256, 1);
+  memset(buffer, 0, 256);
+  lora.getId(buffer, 256, 1);
   Serial.print(buffer);
+
+  lora.setId("2601120E", "00A377F70AE88716", "70B3D57ED001BF9F");
+  lora.setKey("EE43A22A89DF29F1B01D0AA314857769", "54EAB647769D39908A0030A13A10090D", NULL);
   
-  lora.setId(NULL, DevEUI, AppEUI);
-  lora.setKey(NULL, NULL, AppKey);
+  lora.setDeciveMode(LWABP);
+  lora.setDataRate(DR0, EU868);
   
-  ttn.setDeciveMode(LWOTAA);
-  ttn.setDataRate(DR0, EU868);
+  lora.setChannel(0, 868.1);
+  lora.setChannel(1, 868.3);
+  lora.setChannel(2, 868.5);
   
-  ttn.setChannel(0, 868.1);
-  ttn.setChannel(1, 868.3);
-  ttn.setChannel(2, 868.5);
+  lora.setReceiceWindowFirst(0, 868.1);
+  lora.setReceiceWindowSecond(869.5, DR3);
   
-  ttn.setReceiceWindowFirst(0, 868.1);
-  ttn.setReceiceWindowSecond(869.5, DR3);
+  lora.setDutyCycle(false);
+  lora.setJoinDutyCycle(false);
   
-  ttn.setDutyCycle(false);
-  ttn.setJoinDutyCycle(false);
-  
-  ttn.setPower(14);
-  
-  while(!ttn.setOTAAJoin(JOIN));
-  
+  lora.setPower(14);
   // ===================================
 
   // ==== Reading sensors ====
@@ -117,7 +118,7 @@ void setup() {
 
   // ==== Constructing payload ====
 
-  byte payload[10];
+  char payload[6];
 
   payload[0] = highByte(airTemperature);
   payload[1] = lowByte(airTemperature);
@@ -125,16 +126,13 @@ void setup() {
   payload[3] = lowByte(airHumidity);
   payload[4] = highByte(airPressure);
   payload[5] = lowByte(airPressure);
-  payload[6] = highByte(soilMoisture);
-  payload[7] = lowByte(soilMoisture);
-  payload[8] = highByte(soilTemperature);
-  payload[9] = lowByte(soilTemperature);
+
 
   // ==============================
 
   // ==== Sending payload ====
 
-  ttn.transferPacket(payload, 10);
+  lora.transferPacket("payload");
 
   // =========================
 
