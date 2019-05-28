@@ -1,148 +1,143 @@
-#include <Arduino.h>
-#include <Wire.h>
+#include <rn2xx3.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
-#include <LoRaWan.h>
+#include <HardwareSerial.h>
 
-#define uS_TO_S_FACTOR 1000000
-#define SLEEP_TIME 5
+#define RESET 14
+HardwareSerial mySerial(1);
 
+rn2xx3 myLora(mySerial);
 Adafruit_BME280 bme;
-LoRaWanClass ttn;
 
-const int soilTempSensorPin = 13;
-const int soilMoisSensorPin = 14;
+const int sleepTime = 10000 * 1000;
 
-const int ttnTxPin = 17;
-const int ttnRxPin = 16;
-
-char *DevAddr = "2601120E";
-char *DevEUI = "00A377F70AE88716";
-char *AppEUI = "70B3D57ED001BF9F";
-char *NwkSKey = "EE43A22A89DF29F1B01D0AA314857769";
-char *AppSKey = "54EAB647769D39908A0030A13A10090D";
-
-char buffer[256];
-
-float R1 = 10000;
-float c1 = 1.009249522e-03, c2 = 2.378405444e-04, c3 = 2.019202697e-07;
+void initializeRadio();
+void led_on();
+void led_off();
 
 void setup() {
-  // ==== Wakeup time settting ====
+  esp_sleep_enable_timer_wakeup(sleepTime);
+  pinMode(2, OUTPUT);
+  led_on();
+
+  Serial.begin(57600);
+  mySerial.begin(57600, SERIAL_8N1, 26, 27);
+
+  bool status = bme.begin();  
+    if (!status) {
+        Serial.println("Could not find a valid BME280 sensor, check wiring!");
+        while (1);
+    }
+
+  delay(1000); 
   
-  esp_sleep_enable_timer_wakeup(SLEEP_TIME * uS_TO_S_FACTOR);
-  
-  // ==============================
-  
-  // ==== Serial link initialization ====
-  
-  Serial.begin(9600);
+  Serial.println("Startup");
 
-  Serial.println("========aMazeGarden data logger========");
-  
-  // ====================================
+  initializeRadio();
 
-  // ==== Meteo sensor initialization ====
-  
-  bool status = bme.begin();
+  led_off();
+  delay(500);
+  led_on();
 
-  if (!status) {
-    Serial.println("No sensor found");
-  }
-  
-  // =====================================
+  int airTemperature = bme.readTemperature();
+  int airHumidity = bme.readHumidity();
+  int soilMoisture = 10;
+  int soilTemperature = 18;
 
-  // ==== LoRaWan ABP setup ====
-  
-  lora.init(ttnTxPin, ttnRxPin);
+  char payload[4];
 
-  memset(buffer, 0, 256);
-  lora.getVersion(buffer, 256, 1);
-  Serial.print(buffer); 
-  
-  memset(buffer, 0, 256);
-  lora.getId(buffer, 256, 1);
-  Serial.print(buffer);
+  payload[0] = char(airTemperature);
+  payload[1] = char(airHumidity);
+  payload[2] = char(soilMoisture);
+  payload[3] = char(soilTemperature);
 
-  lora.setId("2601120E", "00A377F70AE88716", "70B3D57ED001BF9F");
-  lora.setKey("EE43A22A89DF29F1B01D0AA314857769", "54EAB647769D39908A0030A13A10090D", NULL);
-  
-  lora.setDeciveMode(LWABP);
-  lora.setDataRate(DR0, EU868);
-  
-  lora.setChannel(0, 868.1);
-  lora.setChannel(1, 868.3);
-  lora.setChannel(2, 868.5);
-  
-  lora.setReceiceWindowFirst(0, 868.1);
-  lora.setReceiceWindowSecond(869.5, DR3);
-  
-  lora.setDutyCycle(false);
-  lora.setJoinDutyCycle(false);
-  
-  lora.setPower(14);
-  // ===================================
+  Serial.println("TXing");
 
-  // ==== Reading sensors ====
+  switch(myLora.txCnf(payload)) //one byte, blocking function
+    {
+      case TX_FAIL:
+      {
+        Serial.println("TX unsuccessful or not acknowledged");
+        break;
+      }
+      case TX_SUCCESS:
+      {
+        Serial.println("TX successful and acknowledged");
+        break;
+      }
+      case TX_WITH_RX:
+      {
+        String received = myLora.getRx();
+        String receivedPackets[3];
 
-  // Soil temperature reading.
-  int soilTempSensorReadingAnalog = analogRead(soilTempSensorPin);
-  int R2 = R1 * (4096.0 / (float)soilTempSensorReadingAnalog - 1.0);
-  int logR2 = log(R2);
-  int Temp = (1.0 / (c1 + c2*logR2 + c3*logR2*logR2*logR2));
-  int soilTemperature = Temp - 273.15;
+        receivedPackets[0] = myLora.base16decode(received.substring(0, 2));
+        receivedPackets[1] = myLora.base16decode(received.substring(2, 3));
+        receivedPackets[2] = myLora.base16decode(received.substring(4, 5));
+        
+        int receivedSoilMoisture = receivedPackets[0].toInt();
+        int receivedPosX = receivedPackets[1].toInt();
+        int receivedPosY = receivedPackets[2].toInt();
+        
+        Serial.println(receivedPackets[0]);
 
-  Serial.print("Soil temperature: ");
-  Serial.println(soilTemperature);
+        break;
+      }
+      default:
+      {
+        Serial.println("Unknown response from TX function");
+      }
+    }
 
-  // Soil moisture reading
-  int soilMoistureReading = analogRead(soilMoisSensorPin);
-  int soilMoisture = map(soilMoistureReading, 0, 4096, 0, 100);
-
-  Serial.print("Soil moisture: ");
-  Serial.println(soilMoisture);
-
-  // BME280 reading
-  uint32_t airTemperature = bme.readTemperature() * 100;
-  uint32_t airHumidity = bme.readHumidity() * 100;
-  uint32_t airPressure = bme.readPressure() * 100;
-
-  Serial.print("Air temperature: ");
-  Serial.println(airTemperature);
-  Serial.print("Air humidity: ");
-  Serial.println(airHumidity);
-  Serial.print("Air pressure: ");
-  Serial.println(airPressure);
-
-  // =========================
-
-  // ==== Constructing payload ====
-
-  char payload[6];
-
-  payload[0] = highByte(airTemperature);
-  payload[1] = lowByte(airTemperature);
-  payload[2] = highByte(airHumidity);
-  payload[3] = lowByte(airHumidity);
-  payload[4] = highByte(airPressure);
-  payload[5] = lowByte(airPressure);
-
-
-  // ==============================
-
-  // ==== Sending payload ====
-
-  lora.transferPacket("payload");
-
-  // =========================
-
-  // ==== Going into deep sleep ====
+  led_off();
 
   esp_deep_sleep_start();
-
-  // ===============================
 }
 
-void loop() {
+void initializeRadio()
+{
+  pinMode(RESET, OUTPUT);
+  digitalWrite(RESET, LOW);
+  delay(100);
+  digitalWrite(RESET, HIGH);
+
+  delay(100); 
+  mySerial.flush();
+
+  delay(100); 
+  String hweui = myLora.deveui();
+    while(hweui.length() != 16)
+  {
+    Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the board.");
+    Serial.println(hweui);
+    delay(10000);
+    hweui = myLora.hweui();
+  }
+
+  Serial.println("RN2xx3 firmware version:");
+  Serial.println(myLora.sysver());
+
+  Serial.println("Trying to join TTN");
+  bool join_result = false;
   
+  join_result = myLora.initOTAA("70B3D57ED001BF9F", "D4930E64F5BAA8FD1D3A1A8672EC93E9");
+
+  while(!join_result)
+  {
+    Serial.println("Unable to join. Are your keys correct, and do you have TTN coverage?");
+    delay(60000); 
+    join_result = myLora.init();
+  }
+  Serial.println("Successfully joined TTN");
+}
+
+void loop() {}
+
+void led_on()
+{
+  digitalWrite(2, 1);
+}
+
+void led_off()
+{
+  digitalWrite(2, 0);
 }
