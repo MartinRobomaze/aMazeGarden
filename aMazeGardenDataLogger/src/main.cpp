@@ -11,6 +11,12 @@ Adafruit_BME280 bme;
 
 const int sleepTime = 10000 * 1000;
 
+const int txPin = 27;
+const int rxPin = 26;
+
+const char *appEui = "70B3D57ED001BF9F";
+const char *appKey = "D4930E64F5BAA8FD1D3A1A8672EC93E9";
+
 void initializeRadio();
 void led_on();
 void led_off();
@@ -21,7 +27,7 @@ void setup() {
   led_on();
 
   Serial.begin(57600);
-  mySerial.begin(57600, SERIAL_8N1, 26, 27);
+  mySerial.begin(57600, SERIAL_8N1, rxPin, txPin);
 
   bool status = bme.begin();  
     if (!status) {
@@ -53,44 +59,23 @@ void setup() {
 
   Serial.println("TXing");
 
-  switch(myLora.txCnf(payload)) //one byte, blocking function
-    {
-      case TX_FAIL:
-      {
-        Serial.println("TX unsuccessful or not acknowledged");
-        break;
-      }
-      case TX_SUCCESS:
-      {
-        Serial.println("TX successful and acknowledged");
-        break;
-      }
-      case TX_WITH_RX:
-      {
-        String received = myLora.getRx();
-        String receivedPackets[3];
-
-        receivedPackets[0] = myLora.base16decode(received.substring(0, 2));
-        receivedPackets[1] = myLora.base16decode(received.substring(2, 3));
-        receivedPackets[2] = myLora.base16decode(received.substring(4, 5));
-        
-        int receivedSoilMoisture = receivedPackets[0].toInt();
-        int receivedPosX = receivedPackets[1].toInt();
-        int receivedPosY = receivedPackets[2].toInt();
-        
-        Serial.println(receivedPackets[0]);
-
-        break;
-      }
-      default:
-      {
-        Serial.println("Unknown response from TX function");
-      }
-    }
+  myLora.tx(payload);
 
   led_off();
 
   esp_deep_sleep_start();
+}
+
+void loop() {}
+
+void led_on()
+{
+  digitalWrite(2, 1);
+}
+
+void led_off()
+{
+  digitalWrite(2, 0);
 }
 
 void initializeRadio()
@@ -119,7 +104,7 @@ void initializeRadio()
   Serial.println("Trying to join TTN");
   bool join_result = false;
   
-  join_result = myLora.initOTAA("70B3D57ED001BF9F", "D4930E64F5BAA8FD1D3A1A8672EC93E9");
+  join_result = myLora.initOTAA(appEui, appKey);
 
   while(!join_result)
   {
@@ -128,16 +113,4 @@ void initializeRadio()
     join_result = myLora.init();
   }
   Serial.println("Successfully joined TTN");
-}
-
-void loop() {}
-
-void led_on()
-{
-  digitalWrite(2, 1);
-}
-
-void led_off()
-{
-  digitalWrite(2, 0);
 }
