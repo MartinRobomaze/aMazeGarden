@@ -40,6 +40,7 @@ void water(char *response);
 void led_on();
 void led_off();
 void forward(float distance);
+void rotate(int rotateAngle);
 
 void setup() {
   motorA.begin(rpm, microsteps);
@@ -56,6 +57,11 @@ void setup() {
 }
 
 void loop() {
+  digitalWrite(RESET, LOW);
+  delay(100);
+  digitalWrite(RESET, HIGH);
+  
+  Serial.println("TXing");
   switch (myLora.txCnf("!")) {
     case TX_FAIL: {
       Serial.println("TX unsuccessful or not acknowledged");
@@ -66,6 +72,7 @@ void loop() {
       break;
     }
     case TX_WITH_RX: {
+      Serial.println("TX with RX");
       String received = myLora.getRx();
       char receivedCh[6];
 
@@ -119,16 +126,18 @@ void forward(float distance) {
 
   float revolutions = distance / wheelCircumference;
   int degrees = revolutions * 360;
+  Serial.println(degrees);
 
   controller.rotate(degrees, degrees);
 }
 
 void rotate(int rotateAngle) {
-  int wheelCircumference = PI * 5.6;
+  float wheelCircumference = PI * 5.6;
 
   float distance = ((PI * 20) / 360) * rotateAngle;
   float revolutions = distance / wheelCircumference;
-  int degrees = revolutions * 360;
+  float degrees = revolutions * 360;
+  Serial.println(degrees);
 
   controller.rotate(degrees, -degrees);
 }

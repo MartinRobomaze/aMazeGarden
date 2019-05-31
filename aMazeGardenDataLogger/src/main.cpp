@@ -1,20 +1,32 @@
 #include <rn2xx3.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
+#include <DHT.h>
+#include <DHT_U.h>
 #include <HardwareSerial.h>
 
 #define RESET 14
+
+#define DHTPIN 21
+#define DHTTYPE    DHT22 
+
+DHT_Unified dht(DHTPIN, DHTTYPE);
 HardwareSerial mySerial(1);
 
 rn2xx3 myLora(mySerial);
-Adafruit_BME280 bme;
 
 const int sleepTime = 10000 * 1000;
 
 const int txPin = 27;
 const int rxPin = 26;
 
+const int soilMoistureSensorPin = 35;
+const int soilTemperatureSensorPin = 32 ;
+
+float R1 = 10000;
+float c1 = 1.009249522e-03, c2 = 2.378405444e-04, c3 = 2.019202697e-07;
+
 const char *appEui = "70B3D57ED001BF9F";
+const char *devEui = "0004A30B00E8F02C";
 const char *appKey = "D4930E64F5BAA8FD1D3A1A8672EC93E9";
 
 void initializeRadio();
@@ -29,12 +41,7 @@ void setup() {
   Serial.begin(57600);
   mySerial.begin(57600, SERIAL_8N1, rxPin, txPin);
 
-  bool status = bme.begin();  
-    if (!status) {
-        Serial.println("Could not find a valid BME280 sensor, check wiring!");
-        while (1);
-    }
-
+  dht.begin();
   delay(1000); 
   
   Serial.println("Startup");
@@ -45,13 +52,23 @@ void setup() {
   delay(500);
   led_on();
 
-  int airTemperature = bme.readTemperature();
-  int airHumidity = bme.readHumidity();
-  int soilMoisture = 10;
-  int soilTemperature = 18;
+  sensors_event_t event;
+  dht.temperature().getEvent(&event);
+
+  int airTemperature = event.temperature;
+  dht.humidity().getEvent(&event);
+  int airHumidity = event.relative_humidity;
+  int soilMoisture = map(analogRead(soilMoistureSensorPin), 0, 4095, 1, 100);
+  int Vo = analogRead(soilTemperatureSensorPin);
+
+  float R2 = R1 * (4096.0 / (float)Vo - 1.0);
+  float logR2 = log(R2);
+  float T = (1.0 / (c1 + c2*logR2 + c3*logR2*logR2*logR2));
+  int soilTemperature = T - 273.15;
+
+  Serial.println(airHumidity);
 
   char payload[4];
-
   payload[0] = char(airTemperature);
   payload[1] = char(airHumidity);
   payload[2] = char(soilMoisture);
@@ -104,7 +121,7 @@ void initializeRadio()
   Serial.println("Trying to join TTN");
   bool join_result = false;
   
-  join_result = myLora.initOTAA(appEui, appKey);
+  join_result = myLora.initOTAA(appEui, appKey, devEui);
 
   while(!join_result)
   {
