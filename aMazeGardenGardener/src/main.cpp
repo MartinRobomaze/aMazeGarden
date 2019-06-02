@@ -1,8 +1,7 @@
 #include <Arduino.h>
 #include <rn2xx3.h>
 #include <BasicStepperDriver.h>
-#include <MultiDriver.h>
-#include <SyncDriver.h>
+#include <Servo.h>
 
 #define RESET 14
 
@@ -26,28 +25,28 @@ const int distanceY = 20;
 
 const int pumpPin = 14;
 
+const int servoPin = 16;
+
 HardwareSerial mySerial(1);
 
 rn2xx3 myLora(mySerial);
 
-BasicStepperDriver motorA(dirPinA, stepPinA, stepsPerRevolution);
-BasicStepperDriver motorB(dirPinB, stepPinB, stepsPerRevolution);
+BasicStepperDriver motors(dirPinA, stepPinA, stepsPerRevolution);
 
-SyncDriver controller(motorA, motorB);
+Servo servo;
 
 void initializeRadio();
 void water(char *response);
 void led_on();
 void led_off();
 void forward(float distance);
-void rotate(int rotateAngle);
 
 void setup() {
-  motorA.begin(rpm, microsteps);
-  motorB.begin(rpm, microsteps);
-
+  motors.begin(rpm, microsteps);
   Serial.begin(57600);
   mySerial.begin(57600, SERIAL_8N1, rxPin, txPin);
+
+  servo.attach(servoPin);
 
   pinMode(pumpPin, OUTPUT);
 
@@ -62,6 +61,7 @@ void loop() {
   digitalWrite(RESET, HIGH);
   
   Serial.println("TXing");
+
   switch (myLora.txCnf("!")) {
     case TX_FAIL: {
       Serial.println("TX unsuccessful or not acknowledged");
@@ -94,31 +94,25 @@ void water(char *response) {
   long long plantPosX = number >> 8 & 0xFF;
   long long plantPosY = number & 0xFF;
 
-  rotate(90);
-  forward(plantPosX * distanceX);
-  rotate(-90);
   forward(plantPosY * distanceY);
 
   if (plantPosX == 0) {
-    rotate(-90);
+    servo.write(0);
     digitalWrite(pumpPin, HIGH);
     delay(100 * wateredSoilMoisture);
     digitalWrite(pumpPin, LOW);
-    rotate(90);
+    servo.write(90);
   }
 
   else {
-    rotate(90);
+    servo.write(180);
     digitalWrite(pumpPin, HIGH);
     delay(100 * wateredSoilMoisture);
     digitalWrite(pumpPin, LOW);
-    rotate(-90);
+    servo.write(90);
   }
 
   forward(-(plantPosY * distanceY));
-  rotate(-90);
-  forward(-(plantPosX * distanceX));
-  rotate(90);
 }
 
 void forward(float distance) {
@@ -128,18 +122,7 @@ void forward(float distance) {
   int degrees = revolutions * 360;
   Serial.println(degrees);
 
-  controller.rotate(degrees, degrees);
-}
-
-void rotate(int rotateAngle) {
-  float wheelCircumference = PI * 5.6;
-
-  float distance = ((PI * 20) / 360) * rotateAngle;
-  float revolutions = distance / wheelCircumference;
-  float degrees = revolutions * 360;
-  Serial.println(degrees);
-
-  controller.rotate(degrees, -degrees);
+  motors.rotate(degrees);
 }
 
 void initializeRadio() {

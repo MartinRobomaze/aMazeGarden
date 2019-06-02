@@ -35,6 +35,7 @@ void led_off();
 
 void setup() {
   esp_sleep_enable_timer_wakeup(sleepTime);
+  delay(10);
   pinMode(2, OUTPUT);
   led_on();
 
@@ -74,9 +75,11 @@ void setup() {
   payload[2] = char(soilMoisture);
   payload[3] = char(soilTemperature);
 
-  Serial.println("TXing");
-
-  myLora.tx(payload);
+  int sent;
+  do {
+    Serial.println("TXing");
+    sent = myLora.txCnf(payload);
+  } while (sent == TX_FAIL);
 
   led_off();
 
@@ -87,12 +90,12 @@ void loop() {}
 
 void led_on()
 {
-  digitalWrite(2, 1);
+  digitalWrite(2, 0);
 }
 
 void led_off()
 {
-  digitalWrite(2, 0);
+  digitalWrite(2, 1);
 }
 
 void initializeRadio()
