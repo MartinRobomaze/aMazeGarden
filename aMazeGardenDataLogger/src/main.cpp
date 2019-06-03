@@ -110,6 +110,7 @@ void initializeRadio()
 
   delay(100); 
   String hweui = myLora.deveui();
+  Serial.println(hweui);
     while(hweui.length() != 16)
   {
     Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the board.");
